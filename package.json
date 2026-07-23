@@ -1,0 +1,20 @@
+{
+  "name": "photos-sponge",
+  "version": "1.0.0",
+  "description": "A WXT Chrome extension for quickly triaging visible Google Photos by month.",
+  "scripts": {
+    "dev": "wxt",
+    "dev:chrome": "wxt -b chrome",
+    "build": "wxt build",
+    "zip": "wxt zip",
+    "postinstall": "wxt prepare"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "wxt": "^0.20.26"
+  }
+}
