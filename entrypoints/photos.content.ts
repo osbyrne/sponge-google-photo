@@ -428,7 +428,10 @@ function collectPhotos(): PhotoItem[] {
 
   for (const selector of selectors) {
     document.querySelectorAll<HTMLElement>(selector).forEach((element) => {
-      if (element.querySelector('img')) candidates.add(element);
+      const tile = element.matches('a[href*="/photo/"]')
+        ? element
+        : element.querySelector<HTMLElement>('a[href*="/photo/"]') ?? element;
+      if (findVisualAsset(tile)) candidates.add(tile);
     });
   }
 
@@ -446,7 +449,7 @@ function collectPhotos(): PhotoItem[] {
 }
 
 function toPhotoItem(tile: HTMLElement): PhotoItem | null {
-  const image = tile.querySelector<HTMLImageElement>('img') ?? undefined;
+  const { image, thumbUrl } = findVisualAsset(tile) ?? {};
   const label = normalizeText(
     tile.getAttribute('aria-label') ??
       image?.getAttribute('aria-label') ??
@@ -455,7 +458,6 @@ function toPhotoItem(tile: HTMLElement): PhotoItem | null {
       'Visible photo',
   );
   const month = monthFromLabel(label) ?? monthFromNearbyHeading(tile) ?? 'Visible photos';
-  const thumbUrl = image?.currentSrc || image?.src || undefined;
   const id = [
     tile.getAttribute('data-id'),
     tile.getAttribute('href'),
@@ -467,6 +469,25 @@ function toPhotoItem(tile: HTMLElement): PhotoItem | null {
     .join('|');
 
   return { id, tile, image, label, month, thumbUrl };
+}
+
+function findVisualAsset(tile: HTMLElement): Pick<PhotoItem, 'image' | 'thumbUrl'> | null {
+  const image = tile.querySelector<HTMLImageElement>('img');
+  if (image) return { image, thumbUrl: image.currentSrc || image.src || undefined };
+
+  const elements = [tile, ...tile.querySelectorAll<HTMLElement>('*')];
+  for (const element of elements) {
+    const thumbUrl = element.getAttribute('data-latest-bg') ?? backgroundImageUrl(element);
+    if (thumbUrl) return { thumbUrl };
+  }
+
+  return null;
+}
+
+function backgroundImageUrl(element: HTMLElement): string | undefined {
+  const backgroundImage = getComputedStyle(element).backgroundImage;
+  const match = backgroundImage.match(/^url\(["']?(.*?)["']?\)$/);
+  return match?.[1] || undefined;
 }
 
 function refreshMonthOptions(showMessage = false) {
