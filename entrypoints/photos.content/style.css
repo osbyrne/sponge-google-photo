@@ -1,0 +1,173 @@
+:host,
+* {
+  box-sizing: border-box;
+}
+
+.panel {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 2147483647;
+  width: min(380px, calc(100vw - 24px));
+  overflow: hidden;
+  border: 1px solid rgba(22, 32, 38, 0.16);
+  border-radius: 8px;
+  background: #fbfcfd;
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.28);
+  color: #172026;
+  font: 13px/1.35 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+}
+
+.topbar,
+.actions,
+.picker,
+.keys {
+  display: flex;
+  align-items: center;
+}
+
+.topbar {
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #dbe4ea;
+  background: #fff;
+}
+
+.title {
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 720;
+}
+
+.actions,
+.keys {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+button,
+select {
+  height: 32px;
+  border: 1px solid #c5d0d8;
+  border-radius: 6px;
+  background: #fff;
+  color: #172026;
+  font: inherit;
+}
+
+button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  cursor: pointer;
+  font-weight: 650;
+}
+
+button.primary {
+  border-color: #0f766e;
+  background: #0f766e;
+  color: #fff;
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.body {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+}
+
+.picker {
+  gap: 8px;
+}
+
+.picker select {
+  min-width: 0;
+  flex: 1;
+  padding: 0 8px;
+}
+
+.stage {
+  display: grid;
+  min-height: 190px;
+  overflow: hidden;
+  place-items: center;
+  border: 1px solid #dbe4ea;
+  border-radius: 8px;
+  background: #eef3f6;
+}
+
+.stage img {
+  display: block;
+  width: 100%;
+  height: 240px;
+  object-fit: contain;
+  background: #111827;
+}
+
+.empty {
+  max-width: 260px;
+  padding: 28px;
+  color: #5b6871;
+  text-align: center;
+}
+
+.complete {
+  display: grid;
+  gap: 10px;
+  margin: 12px;
+  padding: 14px;
+  border: 1px solid #9fcfc6;
+  border-radius: 8px;
+  background: #f1faf8;
+}
+
+.complete strong {
+  color: #0f665b;
+}
+
+.meta {
+  display: grid;
+  gap: 4px;
+}
+
+.photo-label {
+  overflow: hidden;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status {
+  min-height: 35px;
+  color: #5b6871;
+}
+
+.keys {
+  padding-top: 2px;
+  color: #52616b;
+}
+
+.key {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+kbd {
+  min-width: 24px;
+  padding: 2px 6px;
+  border: 1px solid #b9c5ce;
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: #fff;
+  color: #172026;
+  font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-align: center;
+}

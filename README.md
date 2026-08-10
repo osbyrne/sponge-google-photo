@@ -2,14 +2,16 @@
 
 A WXT Chrome extension for quickly triaging Google Photos on desktop.
 
-Open Google Photos, scroll to a month, choose that month from the floating panel, then press:
+Open Google Photos, scroll to a month, choose that month from the floating
+panel, then press:
 
 - `Y` to keep the current picture
 - `N` to mark it for trash
 - `U` to undo the previous choice
 - `Esc` to stop without changing Google Photos
 
-The extension does not delete as you go. It marks photos first, then asks for confirmation before it selects the marked photos and starts Google Photos' trash action.
+Pressing `N` selects the photo in Google Photos. When the review is complete,
+use Google Photos' own toolbar to move the selection to trash.
 
 ## Develop
 
@@ -23,11 +25,21 @@ deno run dev
 ## Build
 
 ```sh
-npm run build
+deno run check
+deno run build
 ```
 
 Load `.output/chrome-mv3` as an unpacked extension in Chrome.
 
+## Structure
+
+- `entrypoints/photos.content/` contains the Svelte panel and its WXT bootstrap.
+- `src/photos/review-controller.ts` owns the typed review workflow.
+- `src/photos/google-photos.ts` isolates Google Photos DOM selectors and
+  actions.
+- `entrypoints/popup/` contains the Svelte toolbar popup.
+
 ## Notes
 
-Google Photos does not expose a stable public DOM contract. This extension uses conservative DOM heuristics and refuses to delete when it cannot find selection controls. Review a small month first before using it on a large library.
+Google Photos does not expose a stable public DOM contract. This extension uses
+conservative DOM heuristics and leaves deletion to Google Photos' own interface.

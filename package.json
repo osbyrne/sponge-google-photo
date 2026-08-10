@@ -6,6 +6,7 @@
     "dev": "wxt",
     "dev:chrome": "wxt -b chrome",
     "build": "wxt build",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
     "zip": "wxt zip",
     "postinstall": "wxt prepare"
   },
@@ -14,6 +15,9 @@
   "license": "MIT",
   "type": "module",
   "devDependencies": {
+    "@wxt-dev/module-svelte": "^2.0.5",
+    "svelte": "^5.56.8",
+    "svelte-check": "^4.7.5",
     "typescript": "^6.0.3",
     "wxt": "^0.20.26"
   }

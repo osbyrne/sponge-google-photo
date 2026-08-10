@@ -4,7 +4,10 @@ declare global {
   const ContentScriptContext: typeof import('wxt/utils/content-script-context').ContentScriptContext
   const InvalidMatchPattern: typeof import('wxt/utils/match-patterns').InvalidMatchPattern
   const MatchPattern: typeof import('wxt/utils/match-patterns').MatchPattern
+  const afterUpdate: typeof import('svelte').afterUpdate
+  const beforeUpdate: typeof import('svelte').beforeUpdate
   const browser: typeof import('wxt/browser').browser
+  const createEventDispatcher: typeof import('svelte').createEventDispatcher
   const createIframeUi: typeof import('wxt/utils/content-script-ui/iframe').createIframeUi
   const createIntegratedUi: typeof import('wxt/utils/content-script-ui/integrated').createIntegratedUi
   const createShadowRootUi: typeof import('wxt/utils/content-script-ui/shadow-root').createShadowRootUi
@@ -14,9 +17,16 @@ declare global {
   const defineUnlistedScript: typeof import('wxt/utils/define-unlisted-script').defineUnlistedScript
   const defineWxtPlugin: typeof import('wxt/utils/define-wxt-plugin').defineWxtPlugin
   const fakeBrowser: typeof import('wxt/testing').fakeBrowser
+  const getAllContexts: typeof import('svelte').getAllContexts
   const getAppConfig: typeof import('wxt/utils/app-config').getAppConfig
+  const getContext: typeof import('svelte').getContext
+  const hasContext: typeof import('svelte').hasContext
   const injectScript: typeof import('wxt/utils/inject-script').injectScript
+  const onDestroy: typeof import('svelte').onDestroy
+  const onMount: typeof import('svelte').onMount
+  const setContext: typeof import('svelte').setContext
   const storage: typeof import('wxt/utils/storage').storage
+  const tick: typeof import('svelte').tick
   const useAppConfig: typeof import('wxt/utils/app-config').useAppConfig
 }
 // for type re-export
