@@ -137,12 +137,6 @@ function mountUi() {
       color: white;
     }
 
-    button.danger {
-      border-color: #b42318;
-      background: #b42318;
-      color: white;
-    }
-
     button:disabled {
       cursor: default;
       opacity: 0.5;
@@ -268,7 +262,6 @@ function mountUi() {
         <span class="key"><kbd>Y</kbd> keep</span>
         <span class="key"><kbd>N</kbd> trash</span>
         <span class="key"><kbd>U</kbd> undo</span>
-        <span class="key"><kbd>Enter</kbd> move marked to trash</span>
         <span class="key"><kbd>Esc</kbd> stop</span>
       </div>
     </div>
@@ -290,8 +283,6 @@ function mountUi() {
     if (action === 'refresh') refreshMonthOptions(true);
     if (action === 'hide') root.hidden = true;
     if (action === 'start') startMonth();
-    if (action === 'confirm-delete') void trashMarkedPhotos();
-    if (action === 'cancel-delete') void stopSession('Deletion cancelled. Your marked photos were not changed.');
   });
 }
 
@@ -317,10 +308,6 @@ function handleKeydown(event: KeyboardEvent) {
   if (key === 'u') {
     event.preventDefault();
     void undoDecision();
-  }
-  if (key === 'enter' && state.pendingConfirm) {
-    event.preventDefault();
-    void trashMarkedPhotos();
   }
   if (key === 'escape') {
     event.preventDefault();
@@ -405,59 +392,6 @@ async function undoDecision() {
   state.kept = state.kept.filter((item) => item.id !== current?.id);
   state.busy = false;
   renderCurrent();
-}
-
-async function trashMarkedPhotos() {
-  if (state.busy) return;
-  state.busy = true;
-  state.pendingConfirm = false;
-
-  if (state.trashed.length === 0) {
-    state.busy = false;
-    resetSession('Finished. Nothing was marked for trash.');
-    return;
-  }
-
-  const visiblyDeselected = state.trashed.filter((item) => {
-    const control = findSelectControl(findFreshTile(item) ?? item.tile);
-    return control !== null && !isPhotoSelected(control);
-  });
-  if (visiblyDeselected.length > 0) {
-    state.busy = false;
-    state.pendingConfirm = true;
-    renderConfirm();
-    updateStatus(
-      `${visiblyDeselected.length} marked photo${plural(visiblyDeselected.length)} lost its Google Photos selection. ` +
-      'Press U and mark it again.',
-    );
-    return;
-  }
-
-  updateStatus(`Moving ${state.trashed.length} selected photo${plural(state.trashed.length)} to trash...`);
-
-  const trashButton = await waitForElement(findTrashButton, 2_000);
-  if (!trashButton) {
-    state.busy = false;
-    state.pendingConfirm = true;
-    renderConfirm();
-    updateStatus('Google Photos did not show its trash button. The marked photos remain selected.');
-    return;
-  }
-
-  trashButton.click();
-
-  const confirmButton = await waitForElement(findDialogConfirmButton, 2_500);
-  if (confirmButton) {
-    confirmButton.click();
-    await wait(400);
-    state.busy = false;
-    resetSession(`Sent ${state.trashed.length} photo${plural(state.trashed.length)} to Google Photos trash.`);
-  } else {
-    state.busy = false;
-    state.pendingConfirm = true;
-    renderConfirm();
-    updateStatus('Google Photos did not open a confirmation dialog. The marked photos remain selected.');
-  }
 }
 
 function collectPhotos(): PhotoItem[] {
@@ -596,18 +530,15 @@ function renderCurrent() {
 function renderConfirm() {
   photoStage.innerHTML = `
     <div class="confirm">
-      <strong>Confirm before deleting</strong>
-      <span>${state.trashed.length} photo${plural(state.trashed.length)} marked for trash from ${escapeHtml(state.month)}.</span>
-      <div class="actions">
-        <button type="button" class="danger" data-action="confirm-delete">Move to trash</button>
-        <button type="button" data-action="cancel-delete">Cancel</button>
-      </div>
+      <strong>Review complete</strong>
+      <span>${state.trashed.length} photo${plural(state.trashed.length)} selected in Google Photos from ${escapeHtml(state.month)}.</span>
+      <span>Use the Google Photos toolbar to move them to trash.</span>
     </div>
   `;
 
   const label = mustFind('.photo-label');
   label.textContent = 'Month complete';
-  updateStatus(`${state.kept.length} kept. Press U to review the last photo again.`);
+  updateStatus(`${state.kept.length} kept. Use Google Photos to delete the selection, or press U to review the last photo again.`);
 }
 
 function resetSession(message: string) {
@@ -694,25 +625,6 @@ function hasSelectedPhotos(): boolean {
   return document.querySelector('[role="checkbox"][aria-checked="true"], input[type="checkbox"]:checked') !== null;
 }
 
-function findTrashButton(): HTMLElement | null {
-  const controls = Array.from(document.querySelectorAll<HTMLElement>('button, [role="button"]'));
-  return controls.find((element) => isVisibleControl(element) && /move to trash|trash|delete|bin|remove/i.test(accessibleName(element))) ?? null;
-}
-
-function findDialogConfirmButton(): HTMLElement | null {
-  const dialogs = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"], [aria-modal="true"]'));
-  const scope = dialogs.filter(isVisibleControl).at(-1);
-  if (!scope) return null;
-  const buttons = Array.from(scope.querySelectorAll<HTMLElement>('button, [role="button"]'));
-  return buttons.find((button) => isVisibleControl(button) && /move to trash|trash|delete|remove/i.test(accessibleName(button))) ?? null;
-}
-
-function isVisibleControl(element: HTMLElement): boolean {
-  const rect = element.getBoundingClientRect();
-  const style = getComputedStyle(element);
-  return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
-}
-
 function isVisiblePhotoTile(element: HTMLElement): boolean {
   const rect = element.getBoundingClientRect();
   if (rect.width < VISIBLE_PHOTO_MIN_SIZE || rect.height < VISIBLE_PHOTO_MIN_SIZE) return false;
@@ -768,19 +680,6 @@ function flashTile(tile: HTMLElement) {
   }, 600);
 }
 
-function accessibleName(element: HTMLElement): string {
-  return normalizeText(
-    [
-      element.getAttribute('aria-label'),
-      element.getAttribute('title'),
-      element.textContent,
-      element.querySelector('svg title')?.textContent,
-    ]
-      .filter(Boolean)
-      .join(' '),
-  );
-}
-
 function updateStatus(message: string) {
   statusLine.textContent = message;
 }
@@ -799,16 +698,6 @@ function debounce<T extends (...args: never[]) => void>(fn: T, delay: number) {
 
 function wait(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
-
-async function waitForElement(find: () => HTMLElement | null, timeoutMs: number): Promise<HTMLElement | null> {
-  const deadline = Date.now() + timeoutMs;
-  let element = find();
-  while (!element && Date.now() < deadline) {
-    await wait(50);
-    element = find();
-  }
-  return element;
 }
 
 function plural(count: number) {
