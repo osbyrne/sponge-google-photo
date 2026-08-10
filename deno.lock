@@ -2157,10 +2157,7 @@
       "dependencies": [
         "npm:typescript@^6.0.3",
         "npm:wxt@~0.20.26"
-      ],
-      "overrides": {
-        "uuid": "^11.1.0"
-      }
+      ]
     }
   }
 }

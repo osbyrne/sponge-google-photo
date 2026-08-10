@@ -13,9 +13,11 @@ The extension does not delete as you go. It marks photos first, then asks for co
 
 ## Develop
 
+Sign into Google once using the persistent development profile, then close that
+Chrome window before starting WXT:
+
 ```sh
-npm install
-npm run dev:chrome
+deno run dev
 ```
 
 ## Build
