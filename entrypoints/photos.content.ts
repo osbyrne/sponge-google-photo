@@ -9,6 +9,7 @@ type PhotoItem = {
 
 type SessionState = {
   active: boolean;
+  busy: boolean;
   month: string;
   queue: PhotoItem[];
   index: number;
@@ -20,6 +21,7 @@ type SessionState = {
 
 const ROOT_ID = 'photos-sponge-root';
 const VISIBLE_PHOTO_MIN_SIZE = 80;
+const PHOTO_LINK_SELECTOR = 'a[href^="./photo/"], a[href^="/photo/"]';
 const MONTH_FORMAT = new Intl.DateTimeFormat(undefined, {
   month: 'long',
   year: 'numeric',
@@ -27,6 +29,7 @@ const MONTH_FORMAT = new Intl.DateTimeFormat(undefined, {
 
 const state: SessionState = {
   active: false,
+  busy: false,
   month: '',
   queue: [],
   index: 0,
@@ -265,6 +268,7 @@ function mountUi() {
         <span class="key"><kbd>Y</kbd> keep</span>
         <span class="key"><kbd>N</kbd> trash</span>
         <span class="key"><kbd>U</kbd> undo</span>
+        <span class="key"><kbd>Enter</kbd> move marked to trash</span>
         <span class="key"><kbd>Esc</kbd> stop</span>
       </div>
     </div>
@@ -286,8 +290,8 @@ function mountUi() {
     if (action === 'refresh') refreshMonthOptions(true);
     if (action === 'hide') root.hidden = true;
     if (action === 'start') startMonth();
-    if (action === 'confirm-delete') trashMarkedPhotos();
-    if (action === 'cancel-delete') resetSession('Deletion cancelled. Your marked photos were not changed.');
+    if (action === 'confirm-delete') void trashMarkedPhotos();
+    if (action === 'cancel-delete') void stopSession('Deletion cancelled. Your marked photos were not changed.');
   });
 }
 
@@ -304,27 +308,37 @@ function handleKeydown(event: KeyboardEvent) {
   const key = event.key.toLowerCase();
   if (key === 'y') {
     event.preventDefault();
-    decideCurrent('keep');
+    void decideCurrent('keep');
   }
   if (key === 'n') {
     event.preventDefault();
-    decideCurrent('trash');
+    void decideCurrent('trash');
   }
   if (key === 'u') {
     event.preventDefault();
-    undoDecision();
+    void undoDecision();
+  }
+  if (key === 'enter' && state.pendingConfirm) {
+    event.preventDefault();
+    void trashMarkedPhotos();
   }
   if (key === 'escape') {
     event.preventDefault();
-    resetSession('Stopped. No Google Photos changes were made.');
+    void stopSession('Stopped. No photos were moved to trash.');
   }
 }
 
 function startMonth() {
+  if (hasSelectedPhotos()) {
+    updateStatus('Clear the current Google Photos selection before starting a review.');
+    return;
+  }
+
   const month = monthSelect.value;
   const items = collectPhotos().filter((item) => item.month === month);
 
   state.active = true;
+  state.busy = false;
   state.month = month;
   state.queue = items;
   state.index = 0;
@@ -341,16 +355,27 @@ function startMonth() {
   renderCurrent();
 }
 
-function decideCurrent(decision: 'keep' | 'trash') {
-  if (state.pendingConfirm) return;
+async function decideCurrent(decision: 'keep' | 'trash') {
+  if (state.pendingConfirm || state.busy) return;
 
   const current = state.queue[state.index];
   if (!current) return;
 
-  if (decision === 'trash') state.trashed.push(current);
-  else state.kept.push(current);
+  state.busy = true;
+  if (decision === 'trash') {
+    updateStatus(`Selecting ${current.label} in Google Photos...`);
+    if (!(await setPhotoSelected(current, true))) {
+      state.busy = false;
+      updateStatus('Google Photos did not select this photo. Scroll it into view and press N again.');
+      return;
+    }
+    state.trashed.push(current);
+  } else {
+    state.kept.push(current);
+  }
 
   state.index += 1;
+  state.busy = false;
 
   if (state.index >= state.queue.length) {
     state.pendingConfirm = true;
@@ -361,7 +386,10 @@ function decideCurrent(decision: 'keep' | 'trash') {
   renderCurrent();
 }
 
-function undoDecision() {
+async function undoDecision() {
+  if (state.busy) return;
+  state.busy = true;
+
   if (state.pendingConfirm) {
     state.pendingConfirm = false;
     state.index = Math.max(0, state.queue.length - 1);
@@ -370,50 +398,65 @@ function undoDecision() {
   }
 
   const current = state.queue[state.index];
+  if (current && state.trashed.some((item) => item.id === current.id)) {
+    await setPhotoSelected(current, false);
+  }
   state.trashed = state.trashed.filter((item) => item.id !== current?.id);
   state.kept = state.kept.filter((item) => item.id !== current?.id);
+  state.busy = false;
   renderCurrent();
 }
 
 async function trashMarkedPhotos() {
+  if (state.busy) return;
+  state.busy = true;
   state.pendingConfirm = false;
 
   if (state.trashed.length === 0) {
+    state.busy = false;
     resetSession('Finished. Nothing was marked for trash.');
     return;
   }
 
-  updateStatus(`Selecting ${state.trashed.length} marked photo${plural(state.trashed.length)}...`);
-
-  const selected: PhotoItem[] = [];
-  for (const item of state.trashed) {
-    if (await selectPhoto(item)) selected.push(item);
-    await wait(90);
-  }
-
-  if (selected.length === 0) {
-    resetSession('I could not find Google Photos selection controls for the marked photos. Nothing was deleted.');
+  const visiblyDeselected = state.trashed.filter((item) => {
+    const control = findSelectControl(findFreshTile(item) ?? item.tile);
+    return control !== null && !isPhotoSelected(control);
+  });
+  if (visiblyDeselected.length > 0) {
+    state.busy = false;
+    state.pendingConfirm = true;
+    renderConfirm();
+    updateStatus(
+      `${visiblyDeselected.length} marked photo${plural(visiblyDeselected.length)} lost its Google Photos selection. ` +
+      'Press U and mark it again.',
+    );
     return;
   }
 
-  updateStatus(`Selected ${selected.length}. Opening Google Photos trash action...`);
-  await wait(250);
+  updateStatus(`Moving ${state.trashed.length} selected photo${plural(state.trashed.length)} to trash...`);
 
-  const trashButton = findTrashButton();
+  const trashButton = await waitForElement(findTrashButton, 2_000);
   if (!trashButton) {
-    resetSession('Selected the marked photos, but could not find the Google Photos trash button. Use the toolbar trash icon to finish.');
+    state.busy = false;
+    state.pendingConfirm = true;
+    renderConfirm();
+    updateStatus('Google Photos did not show its trash button. The marked photos remain selected.');
     return;
   }
 
   trashButton.click();
-  await wait(300);
 
-  const confirmButton = findDialogConfirmButton();
+  const confirmButton = await waitForElement(findDialogConfirmButton, 2_500);
   if (confirmButton) {
     confirmButton.click();
-    resetSession(`Sent ${selected.length} photo${plural(selected.length)} to Google Photos trash.`);
+    await wait(400);
+    state.busy = false;
+    resetSession(`Sent ${state.trashed.length} photo${plural(state.trashed.length)} to Google Photos trash.`);
   } else {
-    resetSession(`Opened the Google Photos trash action for ${selected.length} selected photo${plural(selected.length)}. Confirm the Google Photos dialog to finish.`);
+    state.busy = false;
+    state.pendingConfirm = true;
+    renderConfirm();
+    updateStatus('Google Photos did not open a confirmation dialog. The marked photos remain selected.');
   }
 }
 
@@ -421,16 +464,16 @@ function collectPhotos(): PhotoItem[] {
   const candidates = new Set<HTMLElement>();
   const selectors = [
     '[role="gridcell"]',
-    'a[href*="/photo/"]',
+    PHOTO_LINK_SELECTOR,
     'div[aria-label][tabindex]',
     'div[jsaction][aria-label]',
   ];
 
   for (const selector of selectors) {
     document.querySelectorAll<HTMLElement>(selector).forEach((element) => {
-      const tile = element.matches('a[href*="/photo/"]')
+      const tile = element.matches(PHOTO_LINK_SELECTOR)
         ? element
-        : element.querySelector<HTMLElement>('a[href*="/photo/"]') ?? element;
+        : element.querySelector<HTMLElement>(PHOTO_LINK_SELECTOR) ?? element;
       if (findVisualAsset(tile)) candidates.add(tile);
     });
   }
@@ -452,10 +495,10 @@ function toPhotoItem(tile: HTMLElement): PhotoItem | null {
   const { image, thumbUrl } = findVisualAsset(tile) ?? {};
   const label = normalizeText(
     tile.getAttribute('aria-label') ??
-      image?.getAttribute('aria-label') ??
-      image?.alt ??
-      nearestTextLabel(tile) ??
-      'Visible photo',
+    image?.getAttribute('aria-label') ??
+    image?.alt ??
+    nearestTextLabel(tile) ??
+    'Visible photo',
   );
   const month = monthFromLabel(label) ?? monthFromNearbyHeading(tile) ?? 'Visible photos';
   const id = [
@@ -546,7 +589,7 @@ function renderCurrent() {
   flashTile(current.tile);
   updateStatus(
     `${state.month}: ${state.index + 1}/${state.queue.length}. ` +
-      `${state.trashed.length} marked for trash, ${state.kept.length} kept.`,
+    `${state.trashed.length} marked for trash, ${state.kept.length} kept.`,
   );
 }
 
@@ -569,6 +612,7 @@ function renderConfirm() {
 
 function resetSession(message: string) {
   state.active = false;
+  state.busy = false;
   state.month = '';
   state.queue = [];
   state.index = 0;
@@ -584,24 +628,33 @@ function resetSession(message: string) {
   refreshMonthOptions();
 }
 
-async function selectPhoto(item: PhotoItem): Promise<boolean> {
+async function stopSession(message: string) {
+  if (state.busy) return;
+  state.busy = true;
+  await clearPhotoSelection(state.trashed);
+  state.busy = false;
+  resetSession(message);
+}
+
+async function clearPhotoSelection(items: PhotoItem[]) {
+  for (const item of items) {
+    await setPhotoSelected(item, false);
+    await wait(90);
+  }
+}
+
+async function setPhotoSelected(item: PhotoItem, selected: boolean): Promise<boolean> {
   const freshTile = findFreshTile(item) ?? item.tile;
-  freshTile.scrollIntoView({ block: 'center', inline: 'center', behavior: 'smooth' });
-  await wait(180);
+  freshTile.scrollIntoView({ block: 'center', inline: 'center', behavior: 'auto' });
+  await wait(120);
 
   const selectControl = findSelectControl(freshTile);
-  if (selectControl) {
-    selectControl.click();
-    return true;
-  }
+  if (!selectControl) return false;
+  if (isPhotoSelected(selectControl) === selected) return true;
 
-  const checkbox = freshTile.querySelector<HTMLElement>('[role="checkbox"]');
-  if (checkbox) {
-    checkbox.click();
-    return true;
-  }
-
-  return false;
+  selectControl.click();
+  await wait(120);
+  return isPhotoSelected(findSelectControl(freshTile)) === selected;
 }
 
 function findFreshTile(item: PhotoItem): HTMLElement | null {
@@ -609,6 +662,16 @@ function findFreshTile(item: PhotoItem): HTMLElement | null {
 }
 
 function findSelectControl(tile: HTMLElement): HTMLElement | null {
+  const label = tile.getAttribute('aria-label');
+  const photoContainer = tile.parentElement;
+  const localCheckboxes = Array.from(photoContainer?.querySelectorAll<HTMLElement>('[role="checkbox"]') ?? []);
+  const exactLocalMatch = localCheckboxes.find((control) => control.getAttribute('aria-label') === label);
+  if (exactLocalMatch) return exactLocalMatch;
+
+  const globalCheckboxes = Array.from(document.querySelectorAll<HTMLElement>('[role="checkbox"]'));
+  const exactGlobalMatch = globalCheckboxes.find((control) => control.getAttribute('aria-label') === label);
+  if (exactGlobalMatch) return exactGlobalMatch;
+
   const controls = Array.from(tile.querySelectorAll<HTMLElement>('button, [role="button"], [aria-label]'));
   return (
     controls.find((control) => /select|check|tick/i.test(control.getAttribute('aria-label') ?? '')) ??
@@ -621,16 +684,33 @@ function findSelectControl(tile: HTMLElement): HTMLElement | null {
   );
 }
 
+function isPhotoSelected(control: HTMLElement | null): boolean {
+  if (!control) return false;
+  if (control.getAttribute('aria-checked') === 'true') return true;
+  return control instanceof HTMLInputElement && control.checked;
+}
+
+function hasSelectedPhotos(): boolean {
+  return document.querySelector('[role="checkbox"][aria-checked="true"], input[type="checkbox"]:checked') !== null;
+}
+
 function findTrashButton(): HTMLElement | null {
   const controls = Array.from(document.querySelectorAll<HTMLElement>('button, [role="button"]'));
-  return controls.find((element) => /trash|delete|bin|remove/i.test(accessibleName(element))) ?? null;
+  return controls.find((element) => isVisibleControl(element) && /move to trash|trash|delete|bin|remove/i.test(accessibleName(element))) ?? null;
 }
 
 function findDialogConfirmButton(): HTMLElement | null {
   const dialogs = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"], [aria-modal="true"]'));
-  const scope = dialogs.at(-1) ?? document.body;
+  const scope = dialogs.filter(isVisibleControl).at(-1);
+  if (!scope) return null;
   const buttons = Array.from(scope.querySelectorAll<HTMLElement>('button, [role="button"]'));
-  return buttons.find((button) => /move to trash|trash|delete|remove/i.test(accessibleName(button))) ?? null;
+  return buttons.find((button) => isVisibleControl(button) && /move to trash|trash|delete|remove/i.test(accessibleName(button))) ?? null;
+}
+
+function isVisibleControl(element: HTMLElement): boolean {
+  const rect = element.getBoundingClientRect();
+  const style = getComputedStyle(element);
+  return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
 }
 
 function isVisiblePhotoTile(element: HTMLElement): boolean {
@@ -719,6 +799,16 @@ function debounce<T extends (...args: never[]) => void>(fn: T, delay: number) {
 
 function wait(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function waitForElement(find: () => HTMLElement | null, timeoutMs: number): Promise<HTMLElement | null> {
+  const deadline = Date.now() + timeoutMs;
+  let element = find();
+  while (!element && Date.now() < deadline) {
+    await wait(50);
+    element = find();
+  }
+  return element;
 }
 
 function plural(count: number) {
