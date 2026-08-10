@@ -9,6 +9,7 @@
         width: 280px;
         margin: 0;
         padding: 16px;
+        background: #fbfcfd;
         color: #172026;
         font: 13px/1.45 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
@@ -19,23 +20,17 @@
       }
 
       p {
-        margin: 0 0 10px;
+        margin: 0;
       }
 
-      kbd {
-        min-width: 18px;
-        padding: 2px 6px;
-        border: 1px solid #cbd5dc;
-        border-bottom-width: 2px;
-        border-radius: 4px;
-        background: #f8fafc;
-        font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+      #status {
+        color: #52616b;
       }
     </style>
   </head>
   <body>
     <h1>Photos Sponge</h1>
-    <p>Open Google Photos, scroll to the month you want to clean, then use the floating panel.</p>
-    <p><kbd>Y</kbd> keeps the current photo. <kbd>N</kbd> marks it for trash. Nothing is deleted until you confirm.</p>
+    <p id="status">Checking the current tab…</p>
+    <script type="module" src="./main.ts"></script>
   </body>
 </html>

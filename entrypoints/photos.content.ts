@@ -52,6 +52,12 @@ export default defineContentScript({
     mountUi();
     refreshMonthOptions();
 
+    browser.runtime.onMessage.addListener((message: unknown) => {
+      if (!isTogglePanelMessage(message)) return;
+      root.hidden = !root.hidden;
+      return Promise.resolve({ visible: !root.hidden });
+    });
+
     window.addEventListener('keydown', handleKeydown, true);
     window.addEventListener('scroll', debounce(() => refreshMonthOptions(), 300), true);
 
@@ -59,6 +65,15 @@ export default defineContentScript({
     observer.observe(document.body, { childList: true, subtree: true });
   },
 });
+
+function isTogglePanelMessage(message: unknown): message is { type: 'photos-sponge:toggle-panel' } {
+  return (
+    typeof message === 'object' &&
+    message !== null &&
+    'type' in message &&
+    message.type === 'photos-sponge:toggle-panel'
+  );
+}
 
 function mountUi() {
   document.getElementById(ROOT_ID)?.remove();

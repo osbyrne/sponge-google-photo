@@ -8,7 +8,7 @@ export default defineConfig({
   manifest: {
     name: 'Photos Sponge',
     description: 'Easy photo triage for Google Photos.',
-    permissions: ['storage'],
+    permissions: ['storage', 'activeTab'],
     host_permissions: ['https://photos.google.com/*'],
     action: {
       default_title: 'Photos Sponge',
