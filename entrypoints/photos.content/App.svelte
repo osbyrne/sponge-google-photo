@@ -4,7 +4,6 @@
   import type { ReviewSnapshot } from '../../src/photos/types';
 
   export let controller: ReviewController;
-  export let onHide: () => void;
 
   let snapshot: ReviewSnapshot = controller.snapshot;
 
@@ -20,7 +19,6 @@
     <div class="title">Photos Sponge</div>
     <div class="actions">
       <button type="button" onclick={() => controller.refresh(true)} disabled={snapshot.busy}>Refresh</button>
-      <button type="button" onclick={onHide}>Hide</button>
     </div>
   </header>
 

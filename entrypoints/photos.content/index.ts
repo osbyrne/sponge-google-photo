@@ -24,9 +24,6 @@ export default defineContentScript({
           target: container,
           props: {
             controller,
-            onHide: () => {
-              ui.shadowHost.hidden = true;
-            },
           },
         }),
       onRemove: (app) => {

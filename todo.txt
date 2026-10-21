@@ -2,3 +2,5 @@
 - make it work!
 - instead of month, try "30 random pictures"
 - maybe add a synced (Convex?) or local (LibSQL ?) database to keep track of approved pictures
+- change logo
+- publish to app store

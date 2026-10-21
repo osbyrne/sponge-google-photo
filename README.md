@@ -3,7 +3,7 @@
 A WXT Chrome extension for quickly triaging Google Photos on desktop.
 
 Open Google Photos, scroll to a month, choose that month from the floating
-panel, then press:
+panel, then press. Click the extension icon to show or hide the panel:
 
 - `Y` to keep the current picture
 - `N` to mark it for trash
@@ -19,14 +19,14 @@ Sign into Google once using the persistent development profile, then close that
 Chrome window before starting WXT:
 
 ```sh
-deno run dev
+bun run dev
 ```
 
 ## Build
 
 ```sh
-deno run check
-deno run build
+bun run check
+bun run build
 ```
 
 Load `.output/chrome-mv3` as an unpacked extension in Chrome.
@@ -37,7 +37,7 @@ Load `.output/chrome-mv3` as an unpacked extension in Chrome.
 - `src/photos/review-controller.ts` owns the typed review workflow.
 - `src/photos/google-photos.ts` isolates Google Photos DOM selectors and
   actions.
-- `entrypoints/popup/` contains the Svelte toolbar popup.
+- `entrypoints/background.ts` toggles the panel when the toolbar icon is clicked.
 
 ## Notes
 
