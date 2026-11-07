@@ -8,10 +8,14 @@ panel, then press. Click the extension icon to show or hide the panel:
 - `Y` to keep the current picture
 - `N` to mark it for trash
 - `U` to undo the previous choice
+- `Enter` after the review to move selected photos to trash, then confirm in Google Photos
 - `Esc` to stop without changing Google Photos
 
 Pressing `N` selects the photo in Google Photos. When the review is complete,
-use Google Photos' own toolbar to move the selection to trash.
+press `Enter` to open Google Photos' trash confirmation. Cancel to keep the
+review and selection. The extension resets the review after confirmation,
+once Google Photos closes the dialog and clears the selection toolbar.
+If the trash action is unavailable, use Google Photos' own toolbar.
 
 ## Develop
 
@@ -26,10 +30,14 @@ bun run dev
 
 ```sh
 bun run check
+bun run test
 bun run build
 ```
 
 Load `.output/chrome-mv3` as an unpacked extension in Chrome.
+
+Browser tests use a separate headless Chrome profile and local photo fixtures.
+Set `CHROME_BIN` if Chrome is installed at a different path.
 
 ## Structure
 

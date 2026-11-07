@@ -12,7 +12,7 @@ export type MonthOption = {
   count: number;
 };
 
-export type ReviewPhase = "idle" | "reviewing" | "complete";
+export type ReviewPhase = "idle" | "reviewing" | "complete" | "confirming";
 
 export type ReviewSnapshot = {
   phase: ReviewPhase;

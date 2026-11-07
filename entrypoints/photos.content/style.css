@@ -3,6 +3,10 @@
   box-sizing: border-box;
 }
 
+:host([hidden]) {
+  display: none !important;
+}
+
 .panel {
   position: fixed;
   right: 18px;

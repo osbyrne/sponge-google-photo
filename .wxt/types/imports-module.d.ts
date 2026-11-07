@@ -17,5 +17,5 @@ declare module '#imports' {
   export { injectScript, ScriptPublicPath, InjectScriptOptions } from 'wxt/utils/inject-script';
   export { InvalidMatchPattern, MatchPattern } from 'wxt/utils/match-patterns';
   export { onMount, beforeUpdate, afterUpdate, onDestroy, tick, setContext, getContext, hasContext, getAllContexts, createEventDispatcher } from 'svelte';
-  export { fakeBrowser } from 'wxt/testing';
+  export { fakeBrowser } from 'wxt/testing/fake-browser';
 }

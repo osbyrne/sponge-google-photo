@@ -2,8 +2,10 @@ import {
   clearPhotoSelection,
   collectVisiblePhotos,
   focusPhoto,
+  hasOpenPhotosDialog,
   hasSelectedPhotos,
   listVisibleMonths,
+  moveSelectedPhotosToTrash,
   setPhotoSelected,
 } from "./google-photos";
 import type {
@@ -26,6 +28,8 @@ export class ReviewController {
   private kept: PhotoItem[] = [];
   private status = "Visible photos are grouped by their Google Photos labels.";
   private readonly subscribers = new Set<Subscriber>();
+
+  constructor(private readonly signal: AbortSignal) {}
 
   get snapshot(): ReviewSnapshot {
     const current = this.queue[this.index];
@@ -136,7 +140,7 @@ export class ReviewController {
     if (this.index >= this.queue.length) {
       this.phase = "complete";
       this.status = this.selected.length > 0
-        ? `${this.kept.length} kept. Use Google Photos to delete the selection, or press U to review the last photo again.`
+        ? `${this.kept.length} kept. Press Enter to move the selection to trash, or U to undo.`
         : `${this.kept.length} kept. Nothing is selected. Press U to review the last photo again.`;
       this.emit();
       return;
@@ -175,6 +179,40 @@ export class ReviewController {
     this.emit();
     await clearPhotoSelection(this.selected);
 
+    this.resetReview("Stopped. No photos were moved to trash.");
+    this.emit();
+  }
+
+  private async moveToTrash(): Promise<void> {
+    if (this.phase !== "complete" || this.busy || this.selected.length === 0) return;
+    const count = this.selected.length;
+    this.phase = "confirming";
+    this.busy = true;
+    this.status = "Confirm the move to trash in Google Photos, or cancel to keep reviewing.";
+    this.emit();
+
+    const result = await moveSelectedPhotosToTrash(this.signal);
+    if (this.signal.aborted) return;
+    this.busy = false;
+    this.phase = "complete";
+    switch (result) {
+      case "moved":
+        this.resetReview(`${count} photo${plural(count)} moved to trash.`);
+        break;
+      case "cancelled":
+        this.status = "Move to trash cancelled. Press Enter to try again, or U to undo.";
+        break;
+      case "unavailable":
+        this.status = "Could not find the trash action. Use the Google Photos toolbar to move the selection to trash.";
+        break;
+      case "unverified":
+        this.status = "Could not verify the move to trash. Check Google Photos before continuing.";
+        break;
+    }
+    this.emit();
+  }
+
+  private resetReview(status: string): void {
     this.phase = "idle";
     this.busy = false;
     this.queue = [];
@@ -186,22 +224,33 @@ export class ReviewController {
       this.months.some((month) => month.label === this.selectedMonth)
         ? this.selectedMonth
         : (this.months[0]?.label ?? "");
-    this.status = "Stopped. No photos were moved to trash.";
-    this.emit();
+    this.status = status;
   }
 
   handleKeydown(event: KeyboardEvent): void {
+    const key = event.key.toLowerCase();
+    if (key === "enter" && event.repeat && this.phase === "confirming") {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
     if (
-      event.target instanceof HTMLInputElement ||
-      event.target instanceof HTMLTextAreaElement ||
-      event.target instanceof HTMLSelectElement
+      this.phase === "idle" || this.phase === "confirming" || this.busy ||
+      hasOpenPhotosDialog() || event.defaultPrevented || event.repeat || event.isComposing ||
+      event.ctrlKey || event.metaKey || event.altKey || event.shiftKey ||
+      event.composedPath().some((target) =>
+        target instanceof HTMLElement && (target.isContentEditable ||
+          target.matches('input, textarea, select, button, a[href], [role="textbox"], [role="button"]'))
+      )
     ) {
       return;
     }
-    if (this.phase === "idle") return;
 
-    const key = event.key.toLowerCase();
-    if (key === "y") {
+    if (key === "enter" && this.phase === "complete" && this.selected.length > 0) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void this.moveToTrash();
+    } else if (key === "y") {
       event.preventDefault();
       void this.decide("keep");
     } else if (key === "n") {

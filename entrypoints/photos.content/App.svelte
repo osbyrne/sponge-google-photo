@@ -53,12 +53,12 @@
         {:else}
           <div class="empty">Preview unavailable. Use the highlighted tile in Google Photos.</div>
         {/if}
-      {:else if snapshot.phase === 'complete'}
+      {:else if snapshot.phase === 'complete' || snapshot.phase === 'confirming'}
         <div class="complete">
-          <strong>Review complete</strong>
+          <strong>{snapshot.phase === 'confirming' ? 'Confirm in Google Photos' : 'Review complete'}</strong>
           <span>{snapshot.selectedCount} photo{snapshot.selectedCount === 1 ? '' : 's'} selected in Google Photos.</span>
-          {#if snapshot.selectedCount > 0}
-            <span>Use the Google Photos toolbar to move them to trash.</span>
+          {#if snapshot.selectedCount > 0 && snapshot.phase === 'complete'}
+            <span>Press Enter to move them to trash, then confirm in Google Photos.</span>
           {/if}
         </div>
       {:else}
@@ -70,7 +70,7 @@
       <div class="photo-label">
         {#if snapshot.phase === 'reviewing' && snapshot.current}
           {snapshot.current.label}
-        {:else if snapshot.phase === 'complete'}
+        {:else if snapshot.phase === 'complete' || snapshot.phase === 'confirming'}
           Month complete
         {:else}
           No review running
@@ -83,6 +83,9 @@
       <span class="key"><kbd>Y</kbd> keep</span>
       <span class="key"><kbd>N</kbd> trash</span>
       <span class="key"><kbd>U</kbd> undo</span>
+      {#if snapshot.phase === 'complete' && snapshot.selectedCount > 0}
+        <span class="key"><kbd>Enter</kbd> move selection to trash</span>
+      {/if}
       <span class="key"><kbd>Esc</kbd> stop</span>
     </div>
   </div>

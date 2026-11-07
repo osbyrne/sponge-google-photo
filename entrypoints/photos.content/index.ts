@@ -14,7 +14,7 @@ export default defineContentScript({
   cssInjectionMode: "ui",
 
   async main(ctx) {
-    const controller = new ReviewController();
+    const controller = new ReviewController(ctx.signal);
     const ui = await createShadowRootUi(ctx, {
       name: "photos-sponge-ui",
       position: "inline",
@@ -46,7 +46,9 @@ export default defineContentScript({
     ctx.addEventListener(
       window,
       "keydown",
-      (event) => controller.handleKeydown(event),
+      (event) => {
+        if (!ui.shadowHost.hidden) controller.handleKeydown(event);
+      },
       { capture: true },
     );
     ctx.addEventListener(
