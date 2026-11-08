@@ -32,10 +32,12 @@ export default defineContentScript({
     });
 
     ui.mount();
+    controller.setVisible(true);
 
     const togglePanel = (message: unknown) => {
       if (!isTogglePanelMessage(message)) return;
       ui.shadowHost.hidden = !ui.shadowHost.hidden;
+      controller.setVisible(!ui.shadowHost.hidden);
       return Promise.resolve({ visible: !ui.shadowHost.hidden });
     };
     browser.runtime.onMessage.addListener(togglePanel);
@@ -51,18 +53,7 @@ export default defineContentScript({
       },
       { capture: true },
     );
-    ctx.addEventListener(
-      window,
-      "scroll",
-      debounce(() => controller.refresh(), 300),
-      { capture: true },
-    );
-
-    const observer = new MutationObserver(
-      debounce(() => controller.refresh(), 500),
-    );
-    observer.observe(document.body, { childList: true, subtree: true });
-    ctx.onInvalidated(() => observer.disconnect());
+    ctx.addEventListener(window, "wxt:locationchange", () => controller.pause());
   },
 });
 
@@ -73,12 +64,4 @@ function isTogglePanelMessage(message: unknown): message is TogglePanelMessage {
     "type" in message &&
     message.type === "photos-sponge:toggle-panel"
   );
-}
-
-function debounce<T extends (...args: never[]) => void>(fn: T, delay: number) {
-  let timeout: number | undefined;
-  return (...args: Parameters<T>) => {
-    window.clearTimeout(timeout);
-    timeout = window.setTimeout(() => fn(...args), delay);
-  };
 }

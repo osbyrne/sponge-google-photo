@@ -65,7 +65,7 @@ function fixture() {
     get confirmations() { return confirmations; },
     failMove() { failMove = true; },
     async complete(decision: "keep" | "trash" = "trash") {
-      controller.start();
+      await controller.start();
       await controller.decide(decision);
       assert(controller.snapshot.phase === "complete", "Review should be complete");
     },
@@ -90,14 +90,14 @@ const cases: [string, (fixture: Fixture) => Promise<void>][] = [
     assert(f.controller.snapshot.selectedCount === 1, "Selection should be retained");
     assert(f.confirmations === 0, "The extension must never confirm automatically");
   }],
-  ["User confirmation and cleared selection reset the review", async (f) => {
+  ["User confirmation clears committed selections at the end of the timeline", async (f) => {
     await f.complete();
     f.press();
     f.confirm.click();
     await tick();
-    assert(f.controller.snapshot.phase === "idle", "Successful move should reset review");
+    assert(f.controller.snapshot.phase === "complete", "Successful move should retain the end of the timeline");
     assert(f.controller.snapshot.selectedCount === 0, "Successful move should clear review selection");
-    assert(f.controller.snapshot.status === "1 photo moved to trash.", "Success should be reported");
+    assert(f.controller.snapshot.status.includes("Selection moved to trash"), "Success should be reported");
   }],
   ["Cancellation keeps selection, supports retry, and preserves undo", async (f) => {
     await f.complete();
@@ -122,9 +122,9 @@ const cases: [string, (fixture: Fixture) => Promise<void>][] = [
     assert(!f.press("Escape", f.cancel).defaultPrevented, "Escape must reach the native dialog");
     assert(f.clicks === 1 && f.confirmations === 0, "The shortcut must not retrigger or confirm");
   }],
-  ["Enter is inactive before review completion and when nothing is selected", async (f) => {
+  ["Enter is inactive when no photos have been marked", async (f) => {
     f.press();
-    f.controller.start();
+    await f.controller.start();
     f.press();
     await f.controller.decide("keep");
     f.press();
@@ -169,7 +169,7 @@ const cases: [string, (fixture: Fixture) => Promise<void>][] = [
     assert(f.dialog.isConnected, "French trash action should open");
     f.confirm.click();
     await tick();
-    assert(f.controller.snapshot.phase === "idle", "French confirmation should be recognized");
+    assert(f.controller.snapshot.phase === "complete", "French confirmation should be recognized");
   }],
   ["Missing and ambiguous trash controls preserve the review", async (f) => {
     await f.complete();

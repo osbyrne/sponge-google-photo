@@ -1,341 +1,206 @@
-import type { MonthOption, PhotoItem } from "./types";
+import type { PhotoItem, StartOption } from "./types";
 
-const VISIBLE_PHOTO_MIN_SIZE = 80;
-const PHOTO_LINK_SELECTOR = 'a[href^="./photo/"], a[href^="/photo/"]';
-const MONTH_FORMAT = new Intl.DateTimeFormat(undefined, {
-  month: "long",
-  year: "numeric",
-});
-const BUTTON_SELECTOR = 'button, [role="button"]';
-const DIALOG_SELECTOR = '[role="dialog"], [role="alertdialog"], dialog[open]';
-const TRASH_LABELS = new Set([
-  "delete",
-  "move to trash",
-  "move to bin",
-  "supprimer",
-  "placer dans la corbeille",
-  "mettre à la corbeille",
-  "déplacer dans la corbeille",
-  "déplacer vers la corbeille",
-]);
+const PHOTO_LINK_SELECTOR = 'a[href*="/photo/"]';
 
-type TrashResult = "moved" | "cancelled" | "unavailable" | "unverified";
-
-export function hasOpenPhotosDialog(): boolean {
-  return visibleDialogs().length > 0;
+export function isPhotosTimeline(): boolean {
+  return location.protocol === "file:" || /^\/(?:u\/\d+\/?)?$/.test(location.pathname);
 }
 
-export function moveSelectedPhotosToTrash(signal: AbortSignal): Promise<TrashResult> {
-  if (signal.aborted) return Promise.resolve("cancelled");
-  const buttons = Array.from(document.querySelectorAll<HTMLElement>(BUTTON_SELECTOR))
-    .filter((button) => !button.closest(DIALOG_SELECTOR) && isTrashButton(button));
-  const button = buttons[0];
-  if (hasOpenPhotosDialog() || buttons.length !== 1 || !button) {
-    return Promise.resolve("unavailable");
+export function timelineScroller(): HTMLElement {
+  const photo = document.querySelector<HTMLElement>(PHOTO_LINK_SELECTOR);
+  for (let node = photo?.parentElement; node; node = node.parentElement) {
+    if (node.scrollHeight > node.clientHeight && /auto|scroll/.test(getComputedStyle(node).overflowY)) {
+      return node;
+    }
   }
+  const main = document.querySelector<HTMLElement>('[role="main"]');
+  if (main && /auto|scroll/.test(getComputedStyle(main).overflowY)) return main;
+  if (document.scrollingElement instanceof HTMLElement) return document.scrollingElement;
+  return document.documentElement;
+}
 
-  return new Promise((resolve) => {
-    let dialog: HTMLElement | undefined;
-    let confirmed = false;
-    let timeout: number | undefined;
+export function readPhotos(root = timelineScroller(), visibleOnly = false): PhotoItem[] {
+  const bounds = root === document.scrollingElement
+    ? { top: 0, bottom: innerHeight }
+    : root.getBoundingClientRect();
+  const seen = new Set<string>();
+  return Array.from(root.querySelectorAll<HTMLAnchorElement>(PHOTO_LINK_SELECTOR))
+    .filter((tile) => {
+      const rect = tile.getBoundingClientRect();
+      return rect.width >= 40 && rect.height >= 40 && tile.checkVisibility({ visibilityProperty: true }) &&
+        (!visibleOnly || (rect.bottom > bounds.top && rect.top < bounds.bottom));
+    })
+    .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top ||
+      a.getBoundingClientRect().left - b.getBoundingClientRect().left)
+    .flatMap((tile) => {
+      const id = new URL(tile.href).pathname;
+      if (seen.has(id)) return [];
+      const image = tile.querySelector<HTMLImageElement>("img");
+      const label = normalizeText(tile.getAttribute("aria-label") ?? image?.alt ?? "");
+      if (!label) return [];
+      seen.add(id);
+      let thumbUrl = image?.currentSrc || image?.src;
+      if (!thumbUrl) {
+        for (const element of [tile, ...tile.querySelectorAll<HTMLElement>("*")]) {
+          thumbUrl = element.getAttribute("data-latest-bg") ??
+            getComputedStyle(element).backgroundImage.match(/^url\(["']?(.*?)["']?\)$/)?.[1];
+          if (thumbUrl) break;
+        }
+      }
+      const photo: PhotoItem = {
+        ...(/^(?:video|vidéo)\b/iu.test(label)
+          ? { kind: "video", videoUrl: videoUrlFromThumbnail(thumbUrl) }
+          : { kind: "photo" }),
+        id, label, thumbUrl, takenAt: photoDate(label),
+        scrollTop: Math.max(0, root.scrollTop + tile.getBoundingClientRect().top - bounds.top - root.clientHeight * 0.25),
+      };
+      return [photo];
+    });
+}
 
-    const finish = (result: TrashResult) => {
-      window.clearTimeout(timeout);
-      observer.disconnect();
-      document.removeEventListener("click", onClick, true);
-      signal.removeEventListener("abort", onAbort);
-      resolve(result);
-    };
-    const inspect = () => {
-      if (!dialog) {
-        dialog = visibleDialogs().find((candidate) =>
-          Array.from(candidate.querySelectorAll<HTMLElement>(BUTTON_SELECTOR)).some(isTrashButton)
-        );
-        if (dialog) window.clearTimeout(timeout);
-      }
-      if (!dialog || dialog.checkVisibility({ visibilityProperty: true })) return;
-      if (!confirmed) {
-        finish("cancelled");
-      } else if (!hasSelectedPhotos() && !isTrashButton(button)) {
-        finish("moved");
-      }
-    };
-    const onClick = (event: MouseEvent) => {
-      if (!(event.target instanceof Element) || !dialog?.contains(event.target)) return;
-      const control = event.target.closest<HTMLElement>(BUTTON_SELECTOR);
-      if (!control || !isTrashButton(control)) return;
-      confirmed = true;
-      window.clearTimeout(timeout);
-      timeout = window.setTimeout(() => finish("unverified"), 10000);
-    };
-    const onAbort = () => finish("cancelled");
-    const observer = new MutationObserver(inspect);
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true });
-    document.addEventListener("click", onClick, true);
-    signal.addEventListener("abort", onAbort, { once: true });
-    timeout = window.setTimeout(() => finish("unverified"), 3000);
-    button.click();
-    inspect();
+function videoUrlFromThumbnail(thumbUrl: string | undefined): string | null {
+  if (!thumbUrl) return null;
+  try {
+    const url = new URL(thumbUrl);
+    if (url.protocol !== "https:" || url.username || url.password || url.port ||
+      !(url.hostname === "photos.fife.usercontent.google.com" || /^lh\d+\.googleusercontent\.com$/.test(url.hostname))) return null;
+    url.pathname = url.pathname.replace(/(?:=[^/]*)?$/, "=dv");
+    return url.href;
+  } catch {
+    return null;
+  }
+}
+
+export function photoDate(label: string): number | null {
+  const dateLabel = (label.split(/\s[-–]\s/).reverse().find((part) => /\b(?:19|20)\d{2}\b/.test(part)) ?? label)
+    .replace(/[\u202f\u00a0]/g, " ");
+  const parsed = Date.parse(dateLabel);
+  if (Number.isFinite(parsed)) return parsed;
+  const french = dateLabel.toLowerCase().match(/(\d{1,2})\s+([\p{L}.]+)\s+(\d{4})/u);
+  if (!french) return null;
+  for (let month = 0; month < 12; month += 1) {
+    const date = new Date(2000, month, 1);
+    const names = ["long", "short"].map((style) =>
+      new Intl.DateTimeFormat("fr", { month: style === "long" ? "long" : "short" }).format(date).replace(/\.$/, "")
+    );
+    if (names.includes(french[2]?.replace(/\.$/, "") ?? "")) {
+      return new Date(Number(french[3]), month, Number(french[1]), 12).getTime();
+    }
+  }
+  return null;
+}
+
+export function startOptions(now = new Date()): StartOption[] {
+  const years = Array.from(document.querySelectorAll('[role="slider"][aria-valuetext]'))
+    .flatMap((slider) => slider.textContent?.match(/\b(?:19|20)\d{2}\b/g) ?? []).map(Number);
+  const oldestYear = years.length ? Math.min(...years) : now.getFullYear() - 10;
+  const options: StartOption[] = [{ value: "now", label: "Now", before: Infinity }];
+  for (let date = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    date.getFullYear() >= oldestYear;
+    date = new Date(date.getFullYear(), date.getMonth() - 1, 1)) {
+    options.push({
+      value: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`,
+      label: new Intl.DateTimeFormat("en", { month: "long", year: "numeric" }).format(date),
+      before: new Date(date.getFullYear(), date.getMonth() + 1, 1).getTime(),
+    });
+  }
+  return options;
+}
+
+export function findPhoto(id: string, root = timelineScroller()): HTMLAnchorElement | undefined {
+  return Array.from(root.querySelectorAll<HTMLAnchorElement>(PHOTO_LINK_SELECTOR))
+    .find((tile) => new URL(tile.href).pathname === id);
+}
+
+export function hasPendingPhotoMetadata(root: HTMLElement): boolean {
+  const bounds = root === document.scrollingElement ? { top: 0, bottom: innerHeight } : root.getBoundingClientRect();
+  return Array.from(root.querySelectorAll<HTMLAnchorElement>(PHOTO_LINK_SELECTOR)).some((tile) => {
+    const rect = tile.getBoundingClientRect();
+    return rect.width >= 40 && rect.height >= 40 && rect.bottom > bounds.top && rect.top < bounds.bottom &&
+      !normalizeText(tile.getAttribute("aria-label") ?? tile.querySelector("img")?.alt ?? "");
   });
 }
 
-function visibleDialogs(): HTMLElement[] {
-  return Array.from(document.querySelectorAll<HTMLElement>(DIALOG_SELECTOR))
-    .filter((dialog) => dialog.checkVisibility({ visibilityProperty: true }));
-}
-
-function isTrashButton(button: HTMLElement): boolean {
-  const label = normalizeText(
-    button.getAttribute("aria-label") ?? button.getAttribute("data-tooltip") ??
-      button.getAttribute("title") ?? button.textContent,
-  ).toLowerCase();
-  return TRASH_LABELS.has(label) && button.checkVisibility({ visibilityProperty: true }) &&
-    !button.matches(':disabled, [aria-disabled="true"]');
-}
-
-export function collectVisiblePhotos(): PhotoItem[] {
-  const candidates = new Set<HTMLElement>();
-  const selectors = [
-    '[role="gridcell"]',
-    PHOTO_LINK_SELECTOR,
-    "div[aria-label][tabindex]",
-    "div[jsaction][aria-label]",
-  ];
-
-  for (const selector of selectors) {
-    document.querySelectorAll<HTMLElement>(selector).forEach((element) => {
-      const tile = element.matches(PHOTO_LINK_SELECTOR)
-        ? element
-        : element.querySelector<HTMLElement>(PHOTO_LINK_SELECTOR) ?? element;
-      if (findVisualAsset(tile)) candidates.add(tile);
-    });
+export async function showPhoto(photo: PhotoItem, signal: AbortSignal): Promise<HTMLAnchorElement> {
+  const root = timelineScroller();
+  let tile = findPhoto(photo.id, root);
+  if (!tile) {
+    root.scrollTop = photo.scrollTop;
+    tile = await waitFor(() => findPhoto(photo.id, root), signal, 4000);
   }
-
-  const seen = new Set<string>();
-  return Array.from(candidates)
-    .filter(isVisiblePhotoTile)
-    .map(toPhotoItem)
-    .filter((item): item is PhotoItem => item !== null)
-    .filter((item) => {
-      if (seen.has(item.id)) return false;
-      seen.add(item.id);
-      return true;
-    });
+  if (!tile) throw new Error("Could not find this photo again. Your place and decisions are preserved; reopen the panel with the extension icon to retry.");
+  tile.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
+  return tile;
 }
 
-export function listVisibleMonths(): MonthOption[] {
-  const counts = new Map<string, number>();
-  for (const photo of collectVisiblePhotos()) {
-    counts.set(photo.month, (counts.get(photo.month) ?? 0) + 1);
+export async function loadPhotoPreview(photo: PhotoItem, signal: AbortSignal): Promise<PhotoItem> {
+  await showPhoto(photo, signal);
+  const current = await waitFor(() =>
+    readPhotos().find((item) => item.id === photo.id && item.thumbUrl), signal, 5000);
+  if (!current) {
+    throw new Error("Waiting for this photo's preview to load in Google Photos. Reopen the panel with the extension icon to retry.");
   }
-  return Array.from(counts, ([label, count]) => ({ label, count }));
+  return current;
+}
+
+function selectionControl(tile: HTMLElement): HTMLElement | undefined {
+  const parent = tile.parentElement;
+  const controls = parent?.querySelectorAll<HTMLElement>('[role="checkbox"], input[type="checkbox"]') ?? [];
+  if (controls.length === 1) return controls[0];
+  return Array.from(controls).find((control) => control.getAttribute("aria-label") === tile.getAttribute("aria-label"));
+}
+
+export async function setPhotoSelected(photo: PhotoItem, selected: boolean, signal: AbortSignal): Promise<boolean> {
+  const tile = await showPhoto(photo, signal);
+  const control = selectionControl(tile);
+  if (!control) return false;
+  const checked = (node: HTMLElement) => node.getAttribute("aria-checked") === "true" ||
+    (node instanceof HTMLInputElement && node.checked);
+  if (checked(control) === selected) return true;
+  signal.throwIfAborted();
+  control.click();
+  // Once clicked, finish observing the result even if the panel is hidden.
+  return Boolean(await waitFor(() => {
+    const fresh = findPhoto(photo.id);
+    const next = fresh && selectionControl(fresh);
+    return next && checked(next) === selected;
+  }, signal, 1500));
 }
 
 export function hasSelectedPhotos(): boolean {
-  return document.querySelector(
-    '[role="checkbox"][aria-checked="true"], input[type="checkbox"]:checked',
-  ) !== null;
-}
-
-export async function setPhotoSelected(
-  item: PhotoItem,
-  selected: boolean,
-): Promise<boolean> {
-  const freshTile = findFreshTile(item) ?? item.tile;
-  freshTile.scrollIntoView({
-    block: "center",
-    inline: "center",
-    behavior: "auto",
-  });
-  await wait(120);
-
-  const control = findSelectControl(freshTile);
-  if (!control) return false;
-  if (isPhotoSelected(control) === selected) return true;
-
-  control.click();
-  await wait(120);
-  return isPhotoSelected(findSelectControl(freshTile)) === selected;
-}
-
-export async function clearPhotoSelection(items: PhotoItem[]): Promise<void> {
-  for (const item of items) {
-    await setPhotoSelected(item, false);
-    await wait(90);
-  }
-}
-
-export function focusPhoto(item: PhotoItem): void {
-  item.tile.scrollIntoView({
-    block: "center",
-    inline: "center",
-    behavior: "smooth",
-  });
-  flashTile(item.tile);
-}
-
-function toPhotoItem(tile: HTMLElement): PhotoItem | null {
-  const { image, thumbUrl } = findVisualAsset(tile) ?? {};
-  const label = normalizeText(
-    tile.getAttribute("aria-label") ??
-      image?.getAttribute("aria-label") ??
-      image?.alt ??
-      nearestTextLabel(tile) ??
-      "Visible photo",
-  );
-  const month = monthFromLabel(label) ?? monthFromNearbyHeading(tile) ??
-    "Visible photos";
-  const id = [
-    tile.getAttribute("data-id"),
-    tile.getAttribute("href"),
-    label,
-    thumbUrl,
-    Math.round(tile.getBoundingClientRect().top + window.scrollY),
-  ]
-    .filter(Boolean)
-    .join("|");
-
-  return { id, tile, image, label, month, thumbUrl };
-}
-
-function findVisualAsset(
-  tile: HTMLElement,
-): Pick<PhotoItem, "image" | "thumbUrl"> | null {
-  const image = tile.querySelector<HTMLImageElement>("img");
-  if (image) {
-    return { image, thumbUrl: image.currentSrc || image.src || undefined };
-  }
-
-  for (const element of [tile, ...tile.querySelectorAll<HTMLElement>("*")]) {
-    const thumbUrl = element.getAttribute("data-latest-bg") ??
-      backgroundImageUrl(element);
-    if (thumbUrl) return { thumbUrl };
-  }
-  return null;
-}
-
-function backgroundImageUrl(element: HTMLElement): string | undefined {
-  const match = getComputedStyle(element).backgroundImage.match(
-    /^url\(["']?(.*?)["']?\)$/,
-  );
-  return match?.[1] || undefined;
-}
-
-function findFreshTile(item: PhotoItem): HTMLElement | null {
-  return collectVisiblePhotos().find((candidate) =>
-    candidate.id === item.id || candidate.label === item.label
-  )?.tile ?? null;
-}
-
-function findSelectControl(tile: HTMLElement): HTMLElement | null {
-  const label = tile.getAttribute("aria-label");
-  const local = Array.from(
-    tile.parentElement?.querySelectorAll<HTMLElement>('[role="checkbox"]') ??
-      [],
-  );
-  const localMatch = local.find((control) =>
-    control.getAttribute("aria-label") === label
-  );
-  if (localMatch) return localMatch;
-
-  const global = Array.from(
-    document.querySelectorAll<HTMLElement>('[role="checkbox"]'),
-  );
-  const globalMatch = global.find((control) =>
-    control.getAttribute("aria-label") === label
-  );
-  if (globalMatch) return globalMatch;
-
-  const controls = Array.from(
-    tile.querySelectorAll<HTMLElement>('button, [role="button"], [aria-label]'),
-  );
-  return (
-    controls.find((control) =>
-      /select|check|tick/i.test(control.getAttribute("aria-label") ?? "")
-    ) ??
-      controls.find((control) => {
-        const rect = control.getBoundingClientRect();
-        const tileRect = tile.getBoundingClientRect();
-        return rect.width > 12 && rect.height > 12 &&
-          rect.left < tileRect.left + tileRect.width * 0.45;
-      }) ??
-      null
-  );
-}
-
-function isPhotoSelected(control: HTMLElement | null): boolean {
-  if (!control) return false;
-  if (control.getAttribute("aria-checked") === "true") return true;
-  return control instanceof HTMLInputElement && control.checked;
-}
-
-function isVisiblePhotoTile(element: HTMLElement): boolean {
-  const rect = element.getBoundingClientRect();
-  if (
-    rect.width < VISIBLE_PHOTO_MIN_SIZE || rect.height < VISIBLE_PHOTO_MIN_SIZE
-  ) return false;
-  if (rect.bottom < 0 || rect.top > window.innerHeight) return false;
-  if (rect.right < 0 || rect.left > window.innerWidth) return false;
-  return getComputedStyle(element).visibility !== "hidden";
-}
-
-function monthFromLabel(label: string): string | null {
-  const date = Date.parse(label);
-  if (!Number.isNaN(date)) return MONTH_FORMAT.format(new Date(date));
-
-  const match = label.match(
-    /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\b/i,
-  );
-  if (!match) return null;
-
-  const matchedDate = Date.parse(match[0]);
-  return Number.isNaN(matchedDate)
-    ? null
-    : MONTH_FORMAT.format(new Date(matchedDate));
-}
-
-function monthFromNearbyHeading(tile: HTMLElement): string | null {
-  let cursor: Element | null = tile;
-  for (let depth = 0; cursor && depth < 6; depth += 1) {
-    const heading = cursor.querySelector<HTMLElement>(
-      '[role="heading"], h1, h2, h3, [aria-label]',
+  return document.querySelector('[role="checkbox"][aria-checked="true"], input[type="checkbox"]:checked') !== null ||
+    Array.from(document.querySelectorAll<HTMLElement>('button, [role="button"]')).some((button) =>
+      /^(?:clear selection|deselect all|annuler la sélection|désélectionner tout)$/i.test(button.getAttribute("aria-label") ?? "") &&
+      button.checkVisibility({ visibilityProperty: true })
     );
-    const text = normalizeText(
-      heading?.textContent ?? heading?.getAttribute("aria-label") ?? "",
-    );
-    const month = monthFromLabel(text);
-    if (month) return month;
-    cursor = cursor.parentElement;
+}
+
+export async function waitFor<T>(read: () => T | undefined | false, signal: AbortSignal, timeout: number): Promise<T | undefined> {
+  const deadline = performance.now() + timeout;
+  while (performance.now() <= deadline) {
+    signal.throwIfAborted();
+    const value = read();
+    if (value) return value;
+    await delay(80, signal);
   }
-  return null;
+  return undefined;
 }
 
-function nearestTextLabel(tile: HTMLElement): string | null {
-  const texts: string[] = [];
-  let cursor: HTMLElement | null = tile;
-  for (let depth = 0; cursor && depth < 4; depth += 1) {
-    const text = normalizeText(cursor.innerText);
-    if (text && text.length < 120) texts.push(text);
-    cursor = cursor.parentElement;
-  }
-  return texts[0] ?? null;
+export function delay(ms: number, signal: AbortSignal): Promise<void> {
+  signal.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    };
+    const timer = window.setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
-function flashTile(tile: HTMLElement): void {
-  const previousOutline = tile.style.outline;
-  const previousOffset = tile.style.outlineOffset;
-  tile.style.outline = "4px solid #0f766e";
-  tile.style.outlineOffset = "2px";
-  window.setTimeout(() => {
-    tile.style.outline = previousOutline;
-    tile.style.outlineOffset = previousOffset;
-  }, 600);
-}
-
-function normalizeText(text: string | null | undefined): string {
-  return (text ?? "").replace(/\s+/g, " ").trim();
-}
-
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
+function normalizeText(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
 }

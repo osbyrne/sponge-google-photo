@@ -1,32 +1,29 @@
 export type PhotoItem = {
   id: string;
-  tile: HTMLElement;
-  image?: HTMLImageElement;
   label: string;
-  month: string;
   thumbUrl?: string;
-};
+  takenAt: number | null;
+  scrollTop: number;
+} & ({ kind: "photo" } | { kind: "video"; videoUrl: string | null });
 
-export type MonthOption = {
+export type StartOption = {
+  value: string;
   label: string;
-  count: number;
+  before: number;
 };
 
-export type ReviewPhase = "idle" | "reviewing" | "complete" | "confirming";
+export type ReviewPhase = "idle" | "loading" | "reviewing" | "paused" | "complete" | "error" | "confirming";
 
 export type ReviewSnapshot = {
   phase: ReviewPhase;
   busy: boolean;
-  months: MonthOption[];
-  selectedMonth: string;
-  current?: {
-    label: string;
-    thumbUrl?: string;
-    position: number;
-    total: number;
-  };
+  starts: StartOption[];
+  startFrom: string;
+  current: PhotoItem | null;
+  reviewedCount: number;
   selectedCount: number;
   keptCount: number;
+  canUndo: boolean;
   status: string;
 };
 
