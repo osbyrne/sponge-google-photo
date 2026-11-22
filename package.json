@@ -1,6 +1,6 @@
 {
   "name": "photos-sponge",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A WXT Chrome extension for continuous newest-to-oldest review of Google Photos.",
   "scripts": {
     "dev": "wxt",

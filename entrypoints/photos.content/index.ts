@@ -32,7 +32,8 @@ export default defineContentScript({
     });
 
     ui.mount();
-    controller.setVisible(true);
+    ui.shadowHost.hidden = true;
+    controller.setVisible(false);
 
     const togglePanel = (message: unknown) => {
       if (!isTogglePanelMessage(message)) return;
